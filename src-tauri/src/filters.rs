@@ -101,7 +101,7 @@ pub fn set_game_filter(cfg: &mut AppConfig, enabled: bool) -> anyhow::Result<()>
 
 /// Apply the IPSet mode to the config in place and persist it.
 pub fn set_ipset_mode(cfg: &mut AppConfig, mode: &str) -> anyhow::Result<()> {
-    let norm = validate_ipset_mode(mode)?;
+    let norm = validate_ipset_mode(mode).map_err(anyhow::Error::msg)?;
     if cfg.ipset_mode == norm {
         return Ok(());
     }

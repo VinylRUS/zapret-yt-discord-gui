@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 static RUNNING: Lazy<Mutex<Option<RunningProc>>> = Lazy::new(|| Mutex::new(None));

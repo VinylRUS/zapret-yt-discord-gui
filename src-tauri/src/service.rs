@@ -91,12 +91,72 @@ pub fn build_service_command(cfg: &config::AppConfig) -> Result<String> {
 mod platform {
     use super::*;
     use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
     use windows_service::service::{
         ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceState as WinState,
-        ServiceStatus, ServiceType,
+        ServiceType,
     };
     use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+
+    /// Parse a `"exe" arg arg --flag=value` command line (as produced by
+    /// [`build_service_command`]) into the executable path and a list of
+    /// launch arguments. Quoted tokens are unquoted; bare tokens are split
+    /// on whitespace.
+    fn split_command_line(command_line: &str) -> (std::path::PathBuf, Vec<OsString>) {
+        let mut chars = command_line.trim().chars().peekable();
+        let mut exe = String::new();
+        if chars.peek() == Some(&'"') {
+            chars.next();
+            while let Some(&c) = chars.peek() {
+                if c == '"' {
+                    chars.next();
+                    break;
+                }
+                exe.push(c);
+                chars.next();
+            }
+        } else {
+            while let Some(&c) = chars.peek() {
+                if c.is_whitespace() {
+                    break;
+                }
+                exe.push(c);
+                chars.next();
+            }
+        }
+        let mut args: Vec<OsString> = Vec::new();
+        while chars.peek().is_some() {
+            while chars.peek().map(|c| c.is_whitespace()).unwrap_or(false) {
+                chars.next();
+            }
+            if chars.peek().is_none() {
+                break;
+            }
+            let mut tok = String::new();
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                while let Some(&c) = chars.peek() {
+                    if c == '"' {
+                        chars.next();
+                        break;
+                    }
+                    tok.push(c);
+                    chars.next();
+                }
+            } else {
+                while let Some(&c) = chars.peek() {
+                    if c.is_whitespace() {
+                        break;
+                    }
+                    tok.push(c);
+                    chars.next();
+                }
+            }
+            if !tok.is_empty() {
+                args.push(OsString::from(tok));
+            }
+        }
+        (std::path::PathBuf::from(exe), args)
+    }
 
     pub fn install(command_line: &str) -> Result<()> {
         ensure_elevated()?;
@@ -108,13 +168,7 @@ mod platform {
         // if it already exists, delete first so binPath is refreshed
         let _ = remove_inner();
 
-        // SCM expects the full quoted path + args as `executable_path`. We
-        // build it as a wide string and pass via the crate's PCWSTR field.
-        let wide: Vec<u16> = command_line
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let exe_path = windows::core::PCWSTR::from_raw(wide.as_ptr());
+        let (exe_path, launch_args) = split_command_line(command_line);
 
         let info = ServiceInfo {
             name: OsString::from(SERVICE_NAME),
@@ -123,11 +177,10 @@ mod platform {
             start_type: ServiceStartType::AutoStart,
             error_control: ServiceErrorControl::Normal,
             executable_path: exe_path,
-            launch_arguments: vec![],
+            launch_arguments: launch_args,
             dependencies: vec![],
-            description: Some(OsString::from(SERVICE_DESC)),
-            service_sid: None,
-            delayed_auto_start: false,
+            account_name: None,
+            account_password: None,
         };
 
         let _service = manager.create_service(
@@ -163,7 +216,7 @@ mod platform {
         ensure_elevated()?;
         let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
         let service = manager.open_service(SERVICE_NAME, ServiceAccess::START)?;
-        service.start(&[])?;
+        service.start::<&str>(&[])?;
         Ok(())
     }
 
@@ -191,7 +244,7 @@ mod platform {
         ServiceSnapshot {
             installed: true,
             state: map_state(status.current_state),
-            pid: Some(status.process_id),
+            pid: status.process_id,
             start_type: Some(format!("{:?}", status.service_type)),
             bin_path: None,
         }
@@ -206,6 +259,7 @@ mod platform {
             WinState::ContinuePending => ServiceState::ContinuePending,
             WinState::PausePending => ServiceState::PausePending,
             WinState::Paused => ServiceState::Paused,
+            #[allow(unreachable_patterns)]
             _ => ServiceState::Unknown,
         }
     }
