@@ -1,4 +1,4 @@
-name: Build (Windows)
+name: Build & Release (Windows)
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Required to create releases / tags / upload assets.
+permissions:
+  contents: write
+
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
@@ -16,7 +20,7 @@ env:
 
 jobs:
   build:
-    name: Build Windows installer
+    name: Build Windows installer (.exe) and publish to Releases
     runs-on: windows-latest
 
     steps:
@@ -50,31 +54,33 @@ jobs:
         # back to `npm ci` for reproducible installs.
         run: npm install --no-audit --no-fund
 
+      - name: Build frontend
+        # Must run BEFORE any `cargo` step: `tauri::generate_context!()`
+        # reads `frontendDist: "../dist"` at compile time and panics if the
+        # directory does not exist.
+        run: npm run build
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test --no-fail-fast
-
-      - name: Build frontend
-        run: npm run build
 
       - name: Build Tauri app (debug smoke)
         working-directory: src-tauri
         run: cargo build --lib
 
-      - name: Build Tauri bundle (release MSI + NSIS)
+      - name: Build Tauri bundle (release MSI + NSIS .exe)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For the updater plugin — generate with `tauri signer generate`
-          # and store as a repository secret before tagging a release.
+          # Code-signing keys for the built-in updater. Optional: leave empty
+          # until you configure `plugins.updater` in tauri.conf.json. Generate
+          # with `npx @tauri-apps/cli signer generate` and store as repo
+          # secrets before tagging a release.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__CI__
-          releaseName: "Zapret GUI v__VERSION__"
-          releaseBody: "See the assets below to download the Windows installer."
-          releaseDraft: true
-          prerelease: false
+          # No `tagName` here → the action only BUILDS, it does not create a
+          # release. We publish the release ourselves below for full control.
           args: --target x86_64-pc-windows-msvc
 
       - name: Upload MSI artifact
@@ -85,10 +91,55 @@ jobs:
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
           if-no-files-found: warn
 
-      - name: Upload NSIS artifact
+      - name: Upload NSIS .exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zapret-gui-windows-nsis
+          name: zapret-gui-windows-exe
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: warn
+
+      # ---------------------------------------------------------------------
+      # Release publishing.
+      #
+      # Skipped on pull requests (we only build artifacts there).
+      #   • push to main/master → rolling "nightly" prerelease (overwritten each run)
+      #   • push of a v* tag     → proper release marked as latest
+      # ---------------------------------------------------------------------
+      - name: Compute release tag
+        if: github.event_name != 'pull_request'
+        id: reltag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            echo "tag=${tag}"              >> "$GITHUB_OUTPUT"
+            echo "name=Zapret GUI ${tag}"  >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"        >> "$GITHUB_OUTPUT"
+            echo "make_latest=true"        >> "$GITHUB_OUTPUT"
+            echo "body=Zapret GUI ${tag} — Windows installer (.exe + .msi)." >> "$GITHUB_OUTPUT"
+          else
+            short=$(echo "${GITHUB_SHA}" | cut -c1-7)
+            echo "tag=nightly"                                             >> "$GITHUB_OUTPUT"
+            echo "name=Nightly build (${short})"                           >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                                         >> "$GITHUB_OUTPUT"
+            echo "make_latest=false"                                       >> "$GITHUB_OUTPUT"
+            echo "body=Rolling nightly build from ${GITHUB_REF} @ ${short}. Not a stable release." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release with .exe and .msi
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.reltag.outputs.tag }}
+          name: ${{ steps.reltag.outputs.name }}
+          body: ${{ steps.reltag.outputs.body }}
+          prerelease: ${{ steps.reltag.outputs.prerelease }}
+          make_latest: ${{ steps.reltag.outputs.make_latest }}
+          # softprops/action-gh-release overwrites assets that already exist
+          # on the same release — important for the rolling nightly tag.
+          files: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
