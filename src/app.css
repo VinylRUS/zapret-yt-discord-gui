@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* thin scrollbars, dark */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a2f3a;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl bg-ink-800 border border-ink-700 shadow-card p-4;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 hover:bg-brand-500 text-white;
+  }
+  .btn-secondary {
+    @apply btn bg-ink-700 hover:bg-ink-600 text-ink-100 border border-ink-600;
+  }
+  .btn-danger {
+    @apply btn bg-red-600/90 hover:bg-red-500 text-white;
+  }
+  .btn-ghost {
+    @apply btn text-ink-200 hover:bg-ink-700;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  .pill-ok {
+    @apply pill bg-emerald-500/15 text-emerald-300;
+  }
+  .pill-warn {
+    @apply pill bg-amber-500/15 text-amber-300;
+  }
+  .pill-fail {
+    @apply pill bg-red-500/15 text-red-300;
+  }
+  .pill-info {
+    @apply pill bg-sky-500/15 text-sky-300;
+  }
+  .label {
+    @apply text-xs font-medium text-ink-300 uppercase tracking-wide;
+  }
+  .field {
+    @apply w-full bg-ink-900 border border-ink-600 rounded-lg px-3 py-2 text-sm text-ink-100 focus:outline-none focus:ring-2 focus:ring-brand-500;
+  }
+  .switch {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors;
+  }
+  .switch-knob {
+    @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+  }
+}
