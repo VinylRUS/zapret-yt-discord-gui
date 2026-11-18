@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +44,11 @@ jobs:
           restore-keys: cargo-windows-
 
       - name: Install npm dependencies
-        run: npm ci
+        # No package-lock.json is committed (the sandbox can't generate one),
+        # so we use `npm install` instead of `npm ci`. This also writes a
+        # package-lock.json on the first run; commit it afterwards to switch
+        # back to `npm ci` for reproducible installs.
+        run: npm install --no-audit --no-fund
 
       - name: Run Rust tests
         working-directory: src-tauri
