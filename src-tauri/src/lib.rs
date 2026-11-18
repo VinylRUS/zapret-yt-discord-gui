@@ -252,6 +252,11 @@ fn clear_discord_cache() -> Result<u64, String> {
 }
 
 /// Open a folder in the system file explorer (uses the shell plugin).
+//
+// `Shell::open` is deprecated in tauri-plugin-shell v2 in favour of the
+// separate `tauri-plugin-opener` crate. We keep the shell plugin here to
+// avoid pulling in another dependency + capability; the call still works.
+#[allow(deprecated)]
 #[tauri::command]
 async fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;

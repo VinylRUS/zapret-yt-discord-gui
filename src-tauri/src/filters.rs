@@ -105,9 +105,9 @@ pub fn set_ipset_mode(cfg: &mut AppConfig, mode: &str) -> anyhow::Result<()> {
     if cfg.ipset_mode == norm {
         return Ok(());
     }
+    log::info!("ipset_mode -> {norm}");
     cfg.ipset_mode = norm;
     cfg.save()?;
-    log::info!("ipset_mode -> {norm}");
     Ok(())
 }
 
