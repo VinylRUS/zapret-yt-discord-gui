@@ -12,6 +12,7 @@ pub mod monitor;
 pub mod process;
 pub mod service;
 pub mod strategy;
+pub mod strategy_src;
 pub mod updater;
 
 use config::AppConfig;
@@ -228,6 +229,25 @@ async fn update_zapret_binaries(app: tauri::AppHandle) -> Result<String, String>
     .map_err(|e| e.to_string())?
 }
 
+/// Re-pull the `general*.bat` strategy files from Flowseal/zapret-discord-youtube
+/// and overwrite `presets.json`. Returns the number of presets written.
+#[tauri::command]
+async fn refresh_strategies(app: tauri::AppHandle) -> Result<usize, String> {
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        monitor::emit_log(&app, "info", "refreshing strategies from flowseal…");
+        let n = strategy_src::refresh_presets_from_flowseal().map_err(|e| e.to_string())?;
+        monitor::emit_log(&app, "info", &format!("loaded {n} strategies from flowseal"));
+        // push the fresh preset list to the frontend
+        if let Ok(p) = strategy::Presets::load() {
+            let _ = app.emit("presets://updated", &p);
+        }
+        Ok(n)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn update_ipset_list() -> Result<(), String> {
     updater::update_ipset_list().map_err(|e| e.to_string())
@@ -296,6 +316,14 @@ pub fn run() {
                 log::warn!("ensure_dirs failed: {e}");
             }
             // seed presets + config on first run
+            if !config::presets_path().exists() {
+                // pull the real strategy .bat files from Flowseal/zapret-discord-youtube
+                // so the preset list matches upstream exactly (no hand-written
+                // approximations). Falls back to built-in defaults on failure.
+                if let Err(e) = strategy_src::refresh_presets_from_flowseal() {
+                    log::warn!("initial flowseal strategy fetch failed: {e}");
+                }
+            }
             if let Err(e) = strategy::Presets::load() {
                 log::warn!("presets load failed: {e}");
             }
@@ -406,6 +434,7 @@ pub fn run() {
             bin_exists,
             check_upstream_update,
             update_zapret_binaries,
+            refresh_strategies,
             update_ipset_list,
             update_hosts_file,
             run_diagnostics,

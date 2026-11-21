@@ -131,12 +131,32 @@ npm run tauri signer generate -w zapret-gui.key
 ├── lists\        # list-general-user.txt, ipset-all.txt, exclude
 ├── logs\
 ├── config.toml   # настройки GUI
-└── presets.json  # редактируемый список стратегий
+└── presets.json  # стратегии, сгенерированные из general*.bat репо flowseal
 ```
 
 При первом запуске `bin\` пуст — нажмите на вкладке «Обновления» →
 **Update zapret binaries**: приложение скачает последний релиз
 `Flowseal/zapret-discord-youtube` и распакует `bin/` и `lists/`.
+
+## Стратегии
+
+Список стратегий (`presets.json`) **не захардкожен** — он генерируется из
+реальных `general*.bat` файлов репозитория
+[`Flowseal/zapret-discord-youtube`](https://github.com/Flowseal/zapret-discord-youtube).
+Приложение скачивает каждый `general*.bat` (general, ALT, ALT2…ALT13, EXP,
+FAKE TLS AUTO, SIMPLE FAKE и вариации), парсит аргументы `winws.exe`
+(включая многосекционные `--new` блоки) и превращает каждый в отдельный пресет.
+
+- **Первый запуск:** если `presets.json` ещё нет — стратегии тянутся из flowseal
+  автоматически (при наличии сети; иначе — встроенный fallback).
+- **Кнопка «Обновить стратегии»** на вкладке «Обновления» — принудительно
+  перечитать `general*.bat` из flowseal и перестроить список.
+- **«Update zapret binaries»** также обновляет стратегии вместе с бинарниками.
+
+Game-filter порты (`%GameFilterTCP%`/`%GameFilterUDP%` в upstream `.bat`)
+становятся токенами `{GFTCP}`/`{GFUDP}`: при включённом game filter
+подставляется `1024-65535` (как в flowseal), при выключенном — `12`
+(harmless placeholder, тоже как в flowseal).
 
 ## UAC
 

@@ -172,6 +172,7 @@ export const api = {
   checkUpstreamUpdate: () =>
     invoke<UpdateCheckResult>("check_upstream_update"),
   updateZapretBinaries: () => invoke<string>("update_zapret_binaries"),
+  refreshStrategies: () => invoke<number>("refresh_strategies"),
   updateIpsetList: () => invoke<void>("update_ipset_list"),
   updateHostsFile: () => invoke<void>("update_hosts_file"),
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { config, busy, setBusy, pushLog } from "../stores";
+  import { config, presets, busy, setBusy, pushLog } from "../stores";
   import { api, type UpdateCheckResult } from "../api";
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
@@ -94,6 +94,25 @@
       setBusy(key, false);
     }
   }
+
+  async function refreshStrategies() {
+    setBusy("strat", true);
+    pushLog({ ts: new Date().toISOString(), level: "info", message: "Стратегии flowseal…" });
+    try {
+      const n = await api.refreshStrategies();
+      pushLog({
+        ts: new Date().toISOString(),
+        level: "info",
+        message: `Стратегии flowseal ✓ загружено ${n} пресетов`,
+      });
+      // reload the preset store so the Strategies page reflects the new list
+      presets.set(await api.listPresets());
+    } catch (e) {
+      pushLog({ ts: new Date().toISOString(), level: "error", message: `Стратегии: ${e}` });
+    } finally {
+      setBusy("strat", false);
+    }
+  }
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl">
@@ -171,6 +190,14 @@
           disabled={$busy.bin}
         >
           Update zapret binaries
+        </button>
+        <button
+          class="btn-secondary"
+          onclick={refreshStrategies}
+          disabled={$busy.strat}
+          title="Скачать general*.bat из Flowseal/zapret-discord-youtube и перестроить список стратегий"
+        >
+          Обновить стратегии
         </button>
       </div>
     </div>

@@ -149,6 +149,14 @@ pub fn update_zapret_binaries() -> Result<String> {
     extract_zapret_zip(&tmp, &release.tag_name)?;
     let _ = std::fs::remove_file(&tmp);
 
+    // the upstream release ships fresh general*.bat strategy files too;
+    // re-pull & re-parse them from the repo so the preset list tracks
+    // whatever flowseal currently ships (best-effort: a network hiccup
+    // here must not fail the whole binary update).
+    if let Err(e) = crate::strategy_src::refresh_presets_from_flowseal() {
+        log::warn!("strategy refresh after binary update failed: {e}");
+    }
+
     // persist version
     let mut cfg = config::AppConfig::load()?;
     cfg.zapret_bin_version = release.tag_name.clone();

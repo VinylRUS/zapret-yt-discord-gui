@@ -460,14 +460,23 @@ fn default_presets() -> Vec<Preset> {
 
 /// Build the full argument list for a preset given the current config
 /// (applies Game/IPSet filter overlays on top of the base args).
+///
+/// Flowseal strategies embed `{GFTCP}` / `{GFUDP}` tokens where the game-filter
+/// port list goes (mirroring `%GameFilterTCP%` / `%GameFilterUDP%` in the
+/// upstream `.bat`). When `game_filter` is on we substitute the default flowseal
+/// range `1024-65535`; when off we substitute `12` (a harmless placeholder
+/// port, exactly like flowseal's disabled mode) so the `--wf-tcp=...,12` line
+/// stays syntactically valid.
 pub fn build_launch_args(preset: &Preset, cfg: &config::AppConfig) -> Vec<String> {
     let mut base = resolve_args(&preset.args);
 
-    if cfg.game_filter {
-        // extend workflow filter to cover game UDP/TCP ports above 1023
-        base.insert(0, "--wf-tcp=1024-65535".into());
-        base.insert(1, "--wf-udp=1024-65535".into());
-    }
+    let gf_ports = if cfg.game_filter { "1024-65535" } else { "12" };
+    base = base
+        .iter()
+        .map(|a| a.replace("{GFTCP}", gf_ports).replace("{GFUDP}", gf_ports))
+        // strip a trailing comma left if a token somehow ended up empty
+        .map(|a| a.trim_end_matches(',').to_string())
+        .collect();
 
     match cfg.ipset_mode.as_str() {
         "loaded" => {
@@ -519,12 +528,30 @@ mod tests {
     }
 
     #[test]
-    fn game_filter_overlay_extends_ports() {
-        let preset = Presets::defaults().find("general").unwrap().clone();
-        let mut cfg = config::AppConfig::default();
-        cfg.game_filter = true;
-        let args = build_launch_args(&preset, &cfg);
-        assert!(args.iter().any(|a| a.contains("1024-65535")));
+    fn game_filter_overlay_substitutes_tokens() {
+        // flowseal strategies carry {GFTCP}/{GFUDP} tokens; with game_filter
+        // on they must resolve to the default range, off to the placeholder.
+        let preset = Preset {
+            id: "test".into(),
+            name: "test".into(),
+            category: "general".into(),
+            description: String::new(),
+            args: vec![
+                "--wf-tcp=80,443,{GFTCP}".into(),
+                "--wf-udp=443,{GFUDP}".into(),
+            ],
+            recommended: false,
+        };
+        let mut cfg_on = config::AppConfig::default();
+        cfg_on.game_filter = true;
+        let args_on = build_launch_args(&preset, &cfg_on);
+        assert!(args_on.iter().any(|a| a == "--wf-tcp=80,443,1024-65535"));
+        assert!(args_on.iter().any(|a| a == "--wf-udp=443,1024-65535"));
+
+        let cfg_off = config::AppConfig::default();
+        let args_off = build_launch_args(&preset, &cfg_off);
+        assert!(args_off.iter().any(|a| a == "--wf-tcp=80,443,12"));
+        assert!(args_off.iter().any(|a| a == "--wf-udp=443,12"));
     }
 
     #[test]
