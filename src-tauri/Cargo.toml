@@ -64,7 +64,11 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-panic = "abort"
+# NOTE: do NOT set `panic = "abort"` here. With abort, any panic (including
+# in background tokio tasks) kills the process instantly with no dialog and
+# no log — the app silently disappears from the tray. The default `unwind`
+# lets the crash hook in src/crash.rs write panic.log + show a MessageBox,
+# and lets a panicking background task die without taking the whole app with it.
 codegen-units = 1
 lto = true
 opt-level = "s"

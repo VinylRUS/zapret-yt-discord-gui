@@ -65,6 +65,8 @@
         </div>
         <button
           class="switch {local.minimize_to_tray ? 'bg-brand-600' : 'bg-ink-600'}"
+          aria-label="Минимизировать в трей"
+          aria-pressed={local.minimize_to_tray}
           onclick={() => (local!.minimize_to_tray = !local!.minimize_to_tray)}
         >
           <span
@@ -82,6 +84,8 @@
         </div>
         <button
           class="switch {local.auto_update_check ? 'bg-brand-600' : 'bg-ink-600'}"
+          aria-label="Автопроверка апдейтов"
+          aria-pressed={local.auto_update_check}
           onclick={() => (local!.auto_update_check = !local!.auto_update_check)}
         >
           <span
@@ -99,6 +103,8 @@
         </div>
         <button
           class="switch {autostartOn ? 'bg-brand-600' : 'bg-ink-600'}"
+          aria-label="Запускать с Windows"
+          aria-pressed={autostartOn}
           onclick={toggleAutostart}
         >
           <span class="switch-knob {autostartOn ? 'translate-x-6' : 'translate-x-1'}"></span>

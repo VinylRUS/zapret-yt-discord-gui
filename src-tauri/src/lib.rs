@@ -5,6 +5,7 @@
 //! `invoke`.
 
 pub mod config;
+pub mod crash;
 pub mod diagnostics;
 pub mod filters;
 pub mod monitor;
@@ -269,6 +270,12 @@ async fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install the crash hook BEFORE anything else: env_logger and the
+    // builder below can panic (e.g. on bad config), and we want every
+    // panic to produce a visible MessageBox + panic.log instead of a
+    // silent process exit.
+    crash::install_panic_hook();
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_secs()
         .init();
@@ -312,8 +319,7 @@ pub fn run() {
                 let show = MenuItem::with_id(&handle, "show", "Show window", true, None::<&str>)?;
                 let quit = MenuItem::with_id(&handle, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(&handle, &[&toggle, &show, &quit])?;
-                TrayIconBuilder::with_id("main")
-                    .icon(handle.default_window_icon().unwrap().clone())
+                let mut builder = TrayIconBuilder::with_id("main")
                     .tooltip("Zapret GUI")
                     .menu(&menu)
                     .on_menu_event(|app, event| match event.id.as_ref() {
@@ -331,8 +337,16 @@ pub fn run() {
                             let _ = app.emit("tray://toggle", ());
                         }
                         _ => {}
-                    })
-                    .build(&handle)?;
+                    });
+                // Don't `.unwrap()` the window icon — if embedding failed at
+                // build time, a panic here would silently kill the app on
+                // startup. Fall back to a tray without a custom icon instead.
+                if let Some(icon) = handle.default_window_icon() {
+                    builder = builder.icon(icon.clone());
+                } else {
+                    log::warn!("no default window icon embedded; tray will use the OS default");
+                }
+                builder.build(&handle)?;
             }
 
             // auto update check on startup if enabled
