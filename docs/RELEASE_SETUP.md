@@ -125,7 +125,7 @@ Secrets.
 Разрешения для фронтенда уже выданы в
 `src-tauri/capabilities/default.json`:
 `updater:allow-check`, `updater:allow-download-and-install`,
-`process:allow-relaunch`.
+`process:allow-restart`.
 
 ---
 

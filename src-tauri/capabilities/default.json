@@ -19,7 +19,7 @@
     "autostart:default",
     "dialog:default",
     "process:default",
-    "process:allow-relaunch",
+    "process:allow-restart",
     "notification:default"
   ]
 }
