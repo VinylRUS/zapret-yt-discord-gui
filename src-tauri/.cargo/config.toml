@@ -1,0 +1,10 @@
+# Build configuration for Windows targets.
+# CI builds for x86_64-pc-windows-msvc; pin it as the default target so
+# `cargo test` / `cargo build` use the right toolchain locally.
+
+[build]
+target = "x86_64-pc-windows-msvc"
+
+[term]
+progress.when = "auto"
+

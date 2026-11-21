@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+dist/
+
+# cargo / rust
+src-tauri/target/
+**/*.rs.bk
+# Cargo.lock SHOULD be committed for a binary app — keep it tracked.
+
+# tauri generated
+src-tauri/gen/
+
+# misc
+.DS_Store
+*.log
+.vscode/
+.idea/
+.docs/
+
+# local config overrides
+*.local
+.env
