@@ -6,7 +6,17 @@
 // embeds the VERSION resource twice and the linker fails with
 // `CVTRES fatal error CVT1100: duplicate resource type:VERSION`.
 // See https://github.com/tauri-apps/tauri/issues/10154
+//
+// The Common-Controls v6 <dependency> is REQUIRED: without it the app loads
+// ComCtl32 v5 and crashes on startup with
+// `Entry point TaskDialogIndirect not found in zapret-gui.exe`.
+// (winres used to inject this block automatically; now we must do it by hand.)
 const WINDOWS_MANIFEST: &str = r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
