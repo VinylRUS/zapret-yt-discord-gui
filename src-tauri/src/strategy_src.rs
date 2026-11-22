@@ -27,7 +27,6 @@ use crate::config;
 use crate::strategy::{Preset, Presets};
 use anyhow::{anyhow, Context, Result};
 
-const REPO: &str = "Flowseal/zapret-discord-youtube";
 const CONTENTS_API: &str = "https://api.github.com/repos/Flowseal/zapret-discord-youtube/contents";
 const RAW_BASE: &str = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/HEAD";
 
