@@ -1,9 +1,12 @@
 //! Configuration persistence (config.toml) and runtime paths.
 //!
-//! All persistent state lives in a single directory under the user's
-//! roaming profile: `%APPDATA%\zapret-gui\` on Windows. The zapret
-//! binaries (winws.exe, WinDivert, fake TLS files) and the lists are
-//! downloaded there at first run, so the installer stays tiny.
+//! All persistent state — `bin/`, `lists/`, `config.toml`, `presets.json` —
+//! lives **next to the executable** (the install folder), NOT in `%APPDATA%`.
+//! Only the runtime logs go to `%APPDATA%\zapret-gui\logs` so they survive a
+//! reinstall and stay user-writable even if the install folder is under
+//! `Program Files`. The zapret binaries (winws.exe, WinDivert, fake TLS
+//! files) and the lists are downloaded into the install folder at first run,
+//! so the installer stays tiny.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -11,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 static APP_DIR: OnceLock<PathBuf> = OnceLock::new();
+static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Logical name of the Windows service backing zapret.
 pub const SERVICE_NAME: &str = "Zapret";
@@ -113,16 +117,35 @@ impl AppConfig {
     }
 }
 
-/// Returns the application data directory, initialising it on first call.
+/// Returns the application data directory: the folder that holds the
+/// executable (the install folder). All non-log data lives here. Computed
+/// once from `current_exe()`; falls back to the current working directory
+/// if the exe path can't be resolved (e.g. some unit-test harnesses).
 pub fn app_dir() -> &'static Path {
     APP_DIR
+        .get_or_init(|| {
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                });
+            exe_dir
+        })
+        .as_path()
+}
+
+/// Logs go to `%APPDATA%\zapret-gui\logs` (roaming, survives reinstall,
+/// always user-writable). Everything else lives in [`app_dir`].
+pub fn logs_dir() -> PathBuf {
+    LOGS_DIR
         .get_or_init(|| {
             let base = dirs::data_dir()
                 .or_else(|| dirs::config_dir())
                 .unwrap_or_else(|| PathBuf::from("."));
-            base.join("zapret-gui")
+            base.join("zapret-gui").join(LOGS_DIR_NAME)
         })
-        .as_path()
+        .clone()
 }
 
 pub fn bin_dir() -> PathBuf {
@@ -130,9 +153,6 @@ pub fn bin_dir() -> PathBuf {
 }
 pub fn lists_dir() -> PathBuf {
     app_dir().join(LISTS_DIR_NAME)
-}
-pub fn logs_dir() -> PathBuf {
-    app_dir().join(LOGS_DIR_NAME)
 }
 pub fn config_path() -> PathBuf {
     app_dir().join("config.toml")
@@ -146,11 +166,13 @@ pub fn winws_exe() -> PathBuf {
     bin_dir().join("winws.exe")
 }
 
-/// Ensure all expected sub-directories exist.
+/// Ensure all expected sub-directories exist (bin/lists in the install
+/// folder, logs in AppData).
 pub fn ensure_dirs() -> Result<()> {
-    for d in [app_dir(), &bin_dir(), &lists_dir(), &logs_dir()] {
+    for d in [app_dir(), &bin_dir(), &lists_dir()] {
         std::fs::create_dir_all(d).with_context(|| format!("mkdir {}", d.display()))?;
     }
+    std::fs::create_dir_all(logs_dir()).with_context(|| format!("mkdir {}", logs_dir().display()))?;
     Ok(())
 }
 

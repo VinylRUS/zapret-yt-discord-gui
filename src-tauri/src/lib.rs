@@ -22,18 +22,42 @@ use tauri::{Emitter, Manager};
 // Config commands
 // ---------------------------------------------------------------------------
 
+/// Current app version (from the package manifest / tauri.conf.json). The
+/// frontend reads this so the "vX.Y.Z" label tracks the released version
+/// instead of being hardcoded.
+#[tauri::command]
+fn app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Path to the install folder that holds bin/, lists/, config.toml,
+/// presets.json (i.e. next to the exe). The Settings page opens it.
+#[tauri::command]
+fn get_app_dir() -> String {
+    config::app_dir().to_string_lossy().to_string()
+}
+
 #[tauri::command]
 fn get_config() -> Result<AppConfig, String> {
     AppConfig::load().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn save_config(state: AppConfig) -> Result<(), String> {
-    state.save().map_err(|e| e.to_string())
+fn save_config(app: tauri::AppHandle, state: AppConfig) -> Result<(), String> {
+    state.save().map_err(|e| e.to_string())?;
+    // push the fresh config to the frontend so the UI reflects the change
+    // without an app restart. (We do NOT restart winws here — Settings only
+    // edits theme/autostart/minimize, which don't affect launch args. Strategy
+    // and filter changes go through their own commands that live-apply.)
+    let _ = app.emit("config://updated", &state);
+    Ok(())
 }
 
 #[tauri::command]
-fn set_active_strategy(strategy_id: String) -> Result<(), String> {
+fn set_active_strategy(
+    app: tauri::AppHandle,
+    strategy_id: String,
+) -> Result<(), String> {
     let mut cfg = AppConfig::load().map_err(|e| e.to_string())?;
     // verify preset exists
     let presets = strategy::Presets::load().map_err(|e| e.to_string())?;
@@ -42,6 +66,12 @@ fn set_active_strategy(strategy_id: String) -> Result<(), String> {
     }
     cfg.active_strategy = strategy_id;
     cfg.save().map_err(|e| e.to_string())?;
+    // switch the running process to the new strategy immediately
+    if let Err(e) = process::apply_config_live(&cfg) {
+        log::warn!("live-apply after strategy change failed: {e}");
+    }
+    let _ = app.emit("config://updated", &cfg);
+    monitor::emit_status_now(&app);
     Ok(())
 }
 
@@ -166,15 +196,27 @@ fn filter_state() -> Result<filters::FilterState, String> {
 }
 
 #[tauri::command]
-fn set_game_filter(enabled: bool) -> Result<(), String> {
+fn set_game_filter(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let mut cfg = AppConfig::load().map_err(|e| e.to_string())?;
-    filters::set_game_filter(&mut cfg, enabled).map_err(|e| e.to_string())
+    filters::set_game_filter(&mut cfg, enabled).map_err(|e| e.to_string())?;
+    if let Err(e) = process::apply_config_live(&cfg) {
+        log::warn!("live-apply after game_filter change failed: {e}");
+    }
+    let _ = app.emit("config://updated", &cfg);
+    monitor::emit_status_now(&app);
+    Ok(())
 }
 
 #[tauri::command]
-fn set_ipset_mode(mode: String) -> Result<(), String> {
+fn set_ipset_mode(app: tauri::AppHandle, mode: String) -> Result<(), String> {
     let mut cfg = AppConfig::load().map_err(|e| e.to_string())?;
-    filters::set_ipset_mode(&mut cfg, &mode).map_err(|e| e.to_string())
+    filters::set_ipset_mode(&mut cfg, &mode).map_err(|e| e.to_string())?;
+    if let Err(e) = process::apply_config_live(&cfg) {
+        log::warn!("live-apply after ipset_mode change failed: {e}");
+    }
+    let _ = app.emit("config://updated", &cfg);
+    monitor::emit_status_now(&app);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -187,19 +229,24 @@ fn process_snapshot() -> Result<process::ProcSnapshot, String> {
 }
 
 #[tauri::command]
-fn process_start(preset_id: Option<String>) -> Result<u32, String> {
+fn process_start(app: tauri::AppHandle, preset_id: Option<String>) -> Result<u32, String> {
     let cfg = AppConfig::load().map_err(|e| e.to_string())?;
     let presets = strategy::Presets::load().map_err(|e| e.to_string())?;
     let id = preset_id.unwrap_or_else(|| cfg.active_strategy.clone());
     let preset = presets
         .find(&id)
         .ok_or_else(|| format!("preset '{id}' not found"))?;
-    process::start_preset(preset, &cfg).map_err(|e| e.to_string())
+    let pid = process::start_preset(preset, &cfg).map_err(|e| e.to_string())?;
+    // reflect the new state in the UI immediately (don't wait for the 3s tick)
+    monitor::emit_status_now(&app);
+    Ok(pid)
 }
 
 #[tauri::command]
-fn process_stop() -> Result<(), String> {
-    process::stop().map_err(|e| e.to_string())
+fn process_stop(app: tauri::AppHandle) -> Result<(), String> {
+    process::stop().map_err(|e| e.to_string())?;
+    monitor::emit_status_now(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -412,6 +459,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_version,
+            get_app_dir,
             get_config,
             save_config,
             set_active_strategy,

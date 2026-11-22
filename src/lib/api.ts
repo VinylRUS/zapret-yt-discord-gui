@@ -133,6 +133,8 @@ export interface DiagnosticReport {
 // ---------- command wrappers ----------
 
 export const api = {
+  appVersion: () => invoke<string>("app_version"),
+  getAppDir: () => invoke<string>("get_app_dir"),
   getConfig: () => invoke<AppConfig>("get_config"),
   saveConfig: (state: AppConfig) => invoke<void>("save_config", { state }),
   setActiveStrategy: (strategyId: string) =>

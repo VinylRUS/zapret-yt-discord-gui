@@ -123,6 +123,27 @@ pub fn bin_path() -> PathBuf {
     config::winws_exe()
 }
 
+/// If an ad-hoc `winws.exe` process is currently running under this manager,
+/// restart it with the given (already-saved) config so strategy / filter /
+/// game-filter changes take effect immediately, without restarting the app.
+/// If nothing is running, this is a no-op.
+pub fn apply_config_live(cfg: &config::AppConfig) -> Result<()> {
+    let running = RUNNING.lock().unwrap().is_some();
+    if !running {
+        return Ok(());
+    }
+    log::info!("restarting winws to apply new config");
+    stop()?;
+    // let WinDivert release the filter before we re-grab it
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    let presets = crate::strategy::Presets::load()?;
+    let preset = presets
+        .find(&cfg.active_strategy)
+        .ok_or_else(|| anyhow!("preset '{}' not found", cfg.active_strategy))?;
+    start_preset(preset, cfg)?;
+    Ok(())
+}
+
 #[cfg(windows)]
 fn kill_pid(pid: u32) -> Result<()> {
     let out = Command::new("taskkill")

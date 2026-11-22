@@ -10,7 +10,9 @@
 use crate::config;
 use crate::process;
 use crate::service;
+use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -20,6 +22,12 @@ const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const HEALTH_INTERVAL: Duration = Duration::from_secs(15);
 /// URL we probe to confirm the bypass is actually working.
 const HEALTH_URL: &str = "https://www.youtube.com";
+
+/// Last-known health result, shared between the periodic monitor loop and
+/// [`build_status`] so an on-demand emit (right after start/stop) doesn't
+/// lose the health dot.
+static LAST_HEALTH: Lazy<Mutex<(bool, Option<u64>)>> =
+    Lazy::new(|| Mutex::new((false, None)));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusEvent {
@@ -34,6 +42,33 @@ pub struct StatusEvent {
     pub health_latency_ms: Option<u64>,
 }
 
+/// Build a status event from the current service + process snapshots and
+/// the cached health probe result. Shared by the periodic loop and
+/// [`emit_status_now`] so a start/stop reflects in the UI instantly instead
+/// of waiting up to `POLL_INTERVAL` for the next tick.
+pub fn build_status() -> StatusEvent {
+    let snap = service::snapshot();
+    let proc_snap = process::snapshot();
+    let (health_ok, health_lat) = *LAST_HEALTH.lock().unwrap();
+    StatusEvent {
+        installed: snap.installed,
+        state: format!("{:?}", snap.state).to_ascii_lowercase(),
+        pid: snap.pid,
+        adhoc_running: proc_snap.running,
+        adhoc_pid: proc_snap.pid,
+        adhoc_preset: proc_snap.preset_id,
+        adhoc_uptime_secs: proc_snap.uptime_secs,
+        health_ok,
+        health_latency_ms: health_lat,
+    }
+}
+
+/// Emit a status event right now (used after start/stop/config changes so
+/// the frontend updates without waiting for the next monitor tick).
+pub fn emit_status_now(app: &AppHandle) {
+    let _ = app.emit("service://status", &build_status());
+}
+
 /// Spawn the monitor background task. Call once during app setup.
 ///
 /// Uses `tauri::async_runtime::spawn`, NOT `tokio::spawn`: the latter
@@ -45,12 +80,7 @@ pub struct StatusEvent {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut tick = 0u64;
-        let mut last_health_ok = false;
-        let mut last_health_lat: Option<u64> = None;
         loop {
-            let snap = service::snapshot();
-            let proc_snap = process::snapshot();
-
             // run health probe every HEALTH_INTERVAL ticks
             if tick % (HEALTH_INTERVAL.as_secs() / POLL_INTERVAL.as_secs()).max(1) == 0 {
                 match tokio::task::spawn_blocking(|| {
@@ -59,27 +89,15 @@ pub fn spawn(app: AppHandle) {
                 .await
                 {
                     Ok(Ok(ms)) => {
-                        last_health_ok = true;
-                        last_health_lat = Some(ms);
+                        *LAST_HEALTH.lock().unwrap() = (true, Some(ms));
                     }
                     _ => {
-                        last_health_ok = false;
-                        last_health_lat = None;
+                        *LAST_HEALTH.lock().unwrap() = (false, None);
                     }
                 }
             }
 
-            let evt = StatusEvent {
-                installed: snap.installed,
-                state: format!("{:?}", snap.state).to_ascii_lowercase(),
-                pid: snap.pid,
-                adhoc_running: proc_snap.running,
-                adhoc_pid: proc_snap.pid,
-                adhoc_preset: proc_snap.preset_id,
-                adhoc_uptime_secs: proc_snap.uptime_secs,
-                health_ok: last_health_ok,
-                health_latency_ms: last_health_lat,
-            };
+            let evt = build_status();
             let _ = app.emit("service://status", &evt);
 
             tick = tick.wrapping_add(1);

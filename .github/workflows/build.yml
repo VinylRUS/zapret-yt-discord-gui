@@ -120,6 +120,58 @@ jobs:
           updaterJsonPreferNsis: true
           args: --target x86_64-pc-windows-msvc
 
+      - name: Ensure latest.json updater manifest exists (fallback)
+        # tauri-action normally emits latest.json when the signing key +
+        # updaterJsonPreferNsis are set. As a guaranteed fallback (and to
+        # repair releases where it silently wasn't uploaded — e.g. an empty
+        # TAURI_UPDATER_PUBKEY), build it ourselves from the signed NSIS
+        # .exe + .sig and upload ONLY if the release doesn't already carry one.
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx 'latest.json'; then
+            echo "latest.json already present on release $TAG — nothing to do"
+            exit 0
+          fi
+          echo "latest.json missing — generating from signed NSIS bundle"
+          python - <<'PY'
+          import json, os, glob, urllib.parse, datetime, sys
+          tag = os.environ["TAG"]
+          repo = os.environ["REPO"]
+          version = tag.lstrip("v")
+          nsis_dir = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          exes = sorted(glob.glob(os.path.join(nsis_dir, "*-setup.exe")))
+          if not exes:
+              print("no NSIS *-setup.exe found under", nsis_dir, "— cannot build latest.json")
+              sys.exit(1)
+          exe = exes[0]
+          exe_name = os.path.basename(exe)
+          sig_path = exe + ".sig"
+          sig = open(sig_path, encoding="utf-8").read().strip() if os.path.exists(sig_path) else ""
+          if not sig:
+              print("WARNING: .sig missing for", exe_name, "— the updater will reject this build")
+          url = f"https://github.com/{repo}/releases/download/{tag}/{urllib.parse.quote(exe_name)}"
+          manifest = {
+              "version": version,
+              "notes": f"Zapret GUI v{version}",
+              "pub_date": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  "windows-x86_64": {
+                      "signature": sig,
+                      "url": url,
+                  }
+              },
+          }
+          with open("latest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=2)
+          print(json.dumps(manifest, indent=2))
+          PY
+          gh release upload "$TAG" latest.json --clobber
+
   # ---------------------------------------------------------------------------
   # Nightly build (push to main/master).
   #

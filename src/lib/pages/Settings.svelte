@@ -144,7 +144,7 @@
         <button
           class="btn-secondary"
           onclick={async () => {
-            const path = await import("@tauri-apps/api/path").then((m) => m.appDataDir());
+            const path = await api.getAppDir();
             await api.openPath(path);
           }}
         >
@@ -152,7 +152,8 @@
         </button>
       </div>
       <p class="text-xs text-ink-400 mt-2">
-        Здесь хранятся winws.exe, списки, config.toml, presets.json.
+        Папка установки (рядом с exe): здесь хранятся winws.exe, списки,
+        config.toml, presets.json. Логи — отдельно в %APPDATA%\zapret-gui\logs.
       </p>
     </div>
 

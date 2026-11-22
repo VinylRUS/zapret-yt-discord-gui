@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { appVersion } from "../stores";
+
   interface NavItem {
     id: string;
     label: string;
@@ -48,6 +50,6 @@
   </nav>
 
   <div class="px-3 py-3 border-t border-ink-700 text-[10px] text-ink-400">
-    v1.0.0 · MIT
+    v{$appVersion} · MIT
   </div>
 </aside>

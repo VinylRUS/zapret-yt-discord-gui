@@ -14,6 +14,7 @@ export const status = writable<StatusEvent | null>(null);
 export const config = writable<AppConfig | null>(null);
 export const presets = writable<Presets | null>(null);
 export const elevated = writable<boolean>(false);
+export const appVersion = writable<string>("0.0.0");
 export const logs = writable<{ ts: string; level: string; message: string }[]>(
   []
 );
@@ -39,14 +40,16 @@ export function pushLog(line: { ts: string; level: string; message: string }) {
 
 export async function refreshAll() {
   try {
-    const [cfg, presetsVal, isElevated] = await Promise.all([
+    const [cfg, presetsVal, isElevated, ver] = await Promise.all([
       api.getConfig(),
       api.listPresets(),
       api.isElevated(),
+      api.appVersion(),
     ]);
     config.set(cfg);
     presets.set(presetsVal);
     elevated.set(isElevated);
+    appVersion.set(ver);
   } catch (e) {
     pushLog({ ts: new Date().toISOString(), level: "error", message: String(e) });
   }
@@ -63,11 +66,18 @@ export async function initStores() {
   onConfig((c) => config.set(c));
   onLog((l) => pushLog(l));
   onTrayToggle(async () => {
-    const s = await api.serviceSnapshot();
-    if (s.state === "running") {
-      await api.serviceStop().catch(() => {});
-    } else {
-      await api.serviceStart().catch(() => {});
+    // Toggle whatever is currently running: ad-hoc process first, then the
+    // Windows service. This is the "Start/Stop" tray menu action.
+    const s = await api.processSnapshot();
+    if (s.running) {
+      await api.processStop().catch(() => {});
+      return;
     }
+    const svc = await api.serviceSnapshot();
+    if (svc.state === "running") {
+      await api.serviceStop().catch(() => {});
+      return;
+    }
+    await api.processStart(null).catch(() => {});
   });
 }
